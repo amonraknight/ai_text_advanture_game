@@ -1,112 +1,153 @@
 # -*- coding: utf-8 -*-
 
-
 import pygame
 import sys
+import contants as CST
+from common_util.utils import get_font
+from game_components.game_status import GameStatus
 
-# 初始化Pygame
-pygame.init()
 
-# 设置窗口大小
-WIDTH = 800
-HEIGHT = 600
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("文字冒险游戏")
+class Game:
+    def __init__(self, width=800, height=600):
+        # 初始化Pygame
+        pygame.init()
 
-# 定义颜色
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-GRAY = (128, 128, 128)
+        # 设置窗口大小
+        self.screen = pygame.display.set_mode((width, height))
+        pygame.display.set_caption("文字冒险游戏")
 
-# 定义字体
-FONT = pygame.font.Font('../resources/fonts/SIMLI.TTF', 36)
+        # 初始化游戏状态
+        self.main_interface = MainInterface(self.screen)
+        self.location_interface = LocationInterface(self.screen)
+        self.conversation_interface = ConversationInterface(self.screen)
+        self.game_status = GameStatus()
+
+    def play(self):
+        # 游戏主循环
+        try:
+            while True:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        sys.exit()
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        if self.game_status.get_current_state() == "main":
+                            for button in self.main_interface.buttons:
+                                button.handle_click(self.game_status)
+                        elif self.game_status.get_current_state() == "location":
+                            for button in self.location_interface.buttons:
+                                button.handle_click(self.game_status)
+                            for button in self.game_status.get_current_location().get_characters_buttons():
+                                button.handle_click(self.game_status)
+                        elif self.game_status.get_current_state() == "conversation":
+                            for button in self.conversation_interface.buttons:
+                                button.handle_click(self.game_status)
+                    elif event.type == pygame.KEYDOWN and self.game_status.get_current_state() == "conversation":
+                        try:
+                            self.conversation_interface.handle_input(event)
+                        except Exception as e:
+                            print(f"处理输入时出错: {e}")
+
+                if self.game_status.get_current_state() == "main":
+                    self.main_interface.draw()
+                elif self.game_status.get_current_state() == "location":
+                    self.location_interface.draw(self.game_status.get_current_location())
+                    # 重新绘制当前地点的人物按钮（因为Button类的draw方法在每次调用时需要重新计算鼠标位置）
+                    for button in self.game_status.get_current_location().get_characters_buttons():
+                        button.draw()
+                elif self.game_status.get_current_state() == "conversation":
+                    self.conversation_interface.draw()
+
+                pygame.display.update()
+        except Exception as e:
+            print(f"游戏运行出错: {e}")
+            pygame.quit()
+            sys.exit()
 
 
 class Button:
-    def __init__(self, text, pos, size, color, highlight_color, action):
+    def __init__(self, text, pos, size, color, highlight_color, action, screen):
         self.text = text
         self.pos = pos
         self.size = size
         self.color = color
         self.highlight_color = highlight_color
-        self.action = action
         self.rect = pygame.Rect(pos[0], pos[1], size[0], size[1])
+        self.action = action
+        self.screen = screen
 
     def draw(self):
         mouse_pos = pygame.mouse.get_pos()
         if self.rect.collidepoint(mouse_pos):
-            pygame.draw.rect(screen, self.highlight_color, self.rect)
+            pygame.draw.rect(self.screen, self.highlight_color, self.rect)
         else:
-            pygame.draw.rect(screen, self.color, self.rect)
-        text_surface = FONT.render(self.text, True, BLACK)
+            pygame.draw.rect(self.screen, self.color, self.rect)
+        text_surface = get_font(CST.FONT_LISHU, 36).render(self.text, True, CST.BLACK)
         text_rect = text_surface.get_rect(center=self.rect.center)
-        screen.blit(text_surface, text_rect)
+        self.screen.blit(text_surface, text_rect)
 
-    def handle_click(self):
+    def handle_click(self, status: GameStatus):
         if self.rect and self.rect.collidepoint(pygame.mouse.get_pos()):
-            self.action()
+            return self.action(status)
+        else:
+            return status
 
 
 class Location:
-    def __init__(self, name, characters):
+    def __init__(self, name, characters, screen):
         self.name = name
         self.characters = characters
+        self.screen = screen
 
     def get_characters_buttons(self):
         buttons = []
         for i, character in enumerate(self.characters):
             y = 100 + i * 50
-            buttons.append(Button(character, (WIDTH // 2, y), (200, 50), GRAY, BLACK, self.start_conversation))
+            buttons.append(
+                Button(character, (CST.WIDTH // 2, y), (200, 50), CST.GRAY, CST.BLACK, start_conversation,
+                       self.screen))
         return buttons
-
-    def start_conversation(self):
-        global current_state
-        current_state = "conversation"
 
 
 class MainInterface:
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen = screen
         self.locations = [
-            Location("大观园", ["贾宝玉", "林黛玉"]),
-            Location("宁国府", ["贾母", "王夫人"])
-        ]
-        self.buttons = [
-            Button("大观园", (WIDTH // 2, 150), (200, 50), GRAY, BLACK, self.enter_location),
-            Button("宁国府", (WIDTH // 2, 250), (200, 50), GRAY, BLACK, self.enter_location),
-            Button("退出游戏", (WIDTH // 2, 350), (200, 50), GRAY, BLACK, self.exit_game)
+            Location("大观园", ["贾宝玉", "林黛玉"], self.screen),
+            Location("宁国府", ["贾母", "王夫人"], self.screen)
         ]
 
-    def enter_location(self):
-        global current_state, current_location
+        self.buttons = [
+            Button("大观园", (CST.WIDTH // 2, 150), (200, 50), CST.GRAY, CST.BLACK, self.enter_location, self.screen),
+            Button("宁国府", (CST.WIDTH // 2, 250), (200, 50), CST.GRAY, CST.BLACK, self.enter_location, self.screen),
+            Button("退出游戏", (CST.WIDTH // 2, 350), (200, 50), CST.GRAY, CST.BLACK, exit_game, self.screen)
+        ]
+
+    def enter_location(self, game_satus: GameStatus):
         mouse_y = pygame.mouse.get_pos()[1]
         if 100 < mouse_y < 150 + 50:  # 大观园按钮区域
-            current_location = self.locations[0]
+            game_satus.set_current_location(self.locations[0])
         elif 200 < mouse_y < 250 + 50:  # 宁国府按钮区域
-            current_location = self.locations[1]
-        current_state = "location"
-
-    def exit_game(self):
-        pygame.quit()
-        sys.exit()
+            game_satus.set_current_location(self.locations[1])
+        game_satus.set_current_state("location")
+        return game_satus
 
     def draw(self):
-        screen.fill(WHITE)
+        self.screen.fill(CST.WHITE)
         for button in self.buttons:
             button.draw()
 
 
 class LocationInterface:
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen = screen
         self.buttons = [
-            Button("离开", (WIDTH // 2, HEIGHT - 50), (200, 50), GRAY, BLACK, self.leave_location)
+            Button("离开", (CST.WIDTH // 2, CST.HEIGHT - 50), (200, 50), CST.GRAY, CST.BLACK, leave_location,
+                   self.screen)
         ]
 
-    def leave_location(self):
-        global current_state
-        current_state = "main"
-
-    def draw(self):
-        screen.fill(WHITE)
+    def draw(self, current_location):
+        self.screen.fill(CST.WHITE)
         for button in self.buttons:
             button.draw()
         for button in current_location.get_characters_buttons():
@@ -114,24 +155,28 @@ class LocationInterface:
 
 
 class ConversationInterface:
-    def __init__(self):
+    def __init__(self, screen):
+        self.screen = screen
         self.text_input = ""
-        self.input_box = pygame.Rect(100, HEIGHT - 100, WIDTH - 200, 50)
+        self.input_box = pygame.Rect(100, CST.HEIGHT - 100, CST.WIDTH - 200, 50)
         self.buttons = [
-            Button("结束对话", (WIDTH // 2, HEIGHT - 50), (200, 50), GRAY, BLACK, self.end_conversation)
+            Button("结束对话", (CST.WIDTH // 2, CST.HEIGHT - 50), (200, 50), CST.GRAY, CST.BLACK,
+                   end_conversation, self.screen),
+            Button("确认", (CST.WIDTH - 150, CST.HEIGHT - 50), (100, 50), CST.GRAY, CST.BLACK, dummy_action,
+                   self.screen)
         ]
-
-    def end_conversation(self):
-        global current_state
-        current_state = "location"
+        self.response = "嗯"
 
     def draw(self):
-        screen.fill(WHITE)
+        self.screen.fill(CST.WHITE)
         for button in self.buttons:
             button.draw()
-        pygame.draw.rect(screen, BLACK, self.input_box, 2)
-        text_surface = FONT.render(self.text_input, True, BLACK)
-        screen.blit(text_surface, (self.input_box.x + 5, self.input_box.y + 5))
+        pygame.draw.rect(self.screen, CST.BLACK, self.input_box, 2)
+        text_surface = get_font(CST.FONT_LISHU, 36).render(self.text_input, True, CST.BLACK)
+        self.screen.blit(text_surface, (self.input_box.x + 5, self.input_box.y + 5))
+        # 显示响应
+        response_surface = get_font(CST.FONT_LISHU, 36).render(self.response, True, CST.BLACK)
+        self.screen.blit(response_surface, (100, CST.HEIGHT - 160))
 
     def handle_input(self, event):
         if event.type == pygame.KEYDOWN:
@@ -143,42 +188,30 @@ class ConversationInterface:
                 self.text_input += event.unicode
 
 
-# 初始化游戏状态
-current_state = "main"
-main_interface = MainInterface()
-location_interface = LocationInterface()
-conversation_interface = ConversationInterface()
-current_location = None
+def leave_location(game_status: GameStatus):
+    game_status.set_current_state("main")
+    return game_status
 
-# 游戏主循环
-while True:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if current_state == "main":
-                for button in main_interface.buttons:
-                    button.handle_click()
-            elif current_state == "location":
-                for button in location_interface.buttons:
-                    button.handle_click()
-                for button in current_location.get_characters_buttons():
-                    button.handle_click()
-            elif current_state == "conversation":
-                for button in conversation_interface.buttons:
-                    button.handle_click()
-        elif event.type == pygame.KEYDOWN and current_state == "conversation":
-            conversation_interface.handle_input(event)
 
-    if current_state == "main":
-        main_interface.draw()
-    elif current_state == "location":
-        location_interface.draw()
-        # 重新绘制当前地点的人物按钮（因为Button类的draw方法在每次调用时需要重新计算鼠标位置）
-        for button in current_location.get_characters_buttons():
-            button.draw()
-    elif current_state == "conversation":
-        conversation_interface.draw()
+def start_conversation(game_status: GameStatus):
+    game_status.set_current_state("conversation")
+    return game_status
 
-    pygame.display.update()
+
+def end_conversation(game_status: GameStatus):
+    game_status.set_current_state("location")
+    return game_status
+
+
+def exit_game(game_satus: GameStatus):
+    pygame.quit()
+    sys.exit()
+
+
+def dummy_action(game_satus: GameStatus):
+    pass
+
+
+if __name__ == '__main__':
+    game = Game()
+    game.play()
